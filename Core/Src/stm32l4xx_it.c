@@ -22,6 +22,8 @@
 #include "stm32l4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "tim.h"
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,7 +59,14 @@
 /* External variables --------------------------------------------------------*/
 
 /* USER CODE BEGIN EV */
-
+extern const uint32_t duty_table[];
+extern const char*    duty_labels[];
+extern volatile uint8_t  duty_index;
+extern volatile uint32_t ic_rise1;
+extern volatile uint32_t ic_fall;
+extern volatile uint32_t ic_rise2;
+extern volatile uint8_t  ic_state;
+extern volatile uint8_t  ic_ready;
 /* USER CODE END EV */
 
 /******************************************************************************/

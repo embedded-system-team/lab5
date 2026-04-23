@@ -29,7 +29,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -50,7 +51,18 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+/* Duty cycle */
+const uint32_t duty_table[] = {100, 250, 500, 750, 900};
+const char* duty_labels[]   = {"10%", "25%", "50%", "75%", "90%"};
+#define DUTY_TABLE_SIZE 5
+volatile uint8_t duty_index = 2;  /* Initialize 50% */
 
+/* Input Capture Variables */
+volatile uint32_t ic_rise1  = 0;
+volatile uint32_t ic_fall   = 0;
+volatile uint32_t ic_rise2  = 0;
+volatile uint8_t  ic_state  = 0;
+volatile uint8_t  ic_ready  = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -103,7 +115,12 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
   /* USER CODE BEGIN 2 */
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
 
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, duty_table[duty_index]);
+
+  printf("\r\nPWM Lab Started\r\n");
+  printf("Initial duty cycle: %s\r\n", duty_labels[duty_index]);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -113,6 +130,28 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    if (ic_ready)
+    {
+      ic_ready = 0;
+
+      uint32_t pulse  = (ic_fall  >= ic_rise1) ?
+                        (ic_fall  -  ic_rise1) :
+                        (1000     -  ic_rise1 + ic_fall);
+
+      uint32_t period = (ic_rise2 >= ic_rise1) ?
+                        (ic_rise2 -  ic_rise1) :
+                        (1000     -  ic_rise1 + ic_rise2);
+
+      float measured_duty = 0.0f;
+      if (period > 0)
+          measured_duty = (float)pulse / (float)period * 100.0f;
+
+      printf("---------------------------\r\n");
+      printf("Set Duty   : %s\r\n",      duty_labels[duty_index]);
+      printf("Pulse Width: %lu us\r\n",  pulse);
+      printf("Period     : %lu us\r\n",  period);
+      printf("Meas Duty  : %.1f%%\r\n",  measured_duty);
+    }
   }
   /* USER CODE END 3 */
 }
@@ -178,6 +217,50 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == GPIO_PIN_13)
+  {
+    printf("Button pressed\r\n");
+    duty_index = (duty_index + 1) % DUTY_TABLE_SIZE;
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, duty_table[duty_index]);
+    printf("Duty cycle -> %s\r\n", duty_labels[duty_index]);
+
+    ic_state = 0;
+    ic_ready = 0;
+  }
+
+  if (GPIO_Pin == GPIO_PIN_0)
+  {
+    printf("IC triggered\r\n");
+    uint32_t cnt = __HAL_TIM_GET_COUNTER(&htim2);
+    uint8_t  pin = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_0);
+
+    if (ic_state == 0 && pin == GPIO_PIN_SET)
+    {
+      ic_rise1 = cnt;
+      ic_state = 1;
+    }
+    else if (ic_state == 1 && pin == GPIO_PIN_RESET)
+    {
+      ic_fall  = cnt;
+      ic_state = 2;
+    }
+    else if (ic_state == 2 && pin == GPIO_PIN_SET)
+    {
+      ic_rise2 = cnt;
+      ic_state = 0;
+      ic_ready = 1;
+    }
+  }
+}
+
+int _write(int file, char *ptr, int len)
+{
+  HAL_UART_Transmit(&huart1, (uint8_t *)ptr, len, HAL_MAX_DELAY);
+  return len;
+}
 
 /* USER CODE END 4 */
 
