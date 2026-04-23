@@ -115,10 +115,12 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
   /* USER CODE BEGIN 2 */
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
-
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, duty_table[duty_index]);
-
   printf("\r\nPWM Lab Started\r\n");
   printf("Initial duty cycle: %s\r\n", duty_labels[duty_index]);
   /* USER CODE END 2 */
@@ -130,28 +132,30 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if (ic_ready)
+  if (ic_ready)
+  {
+    ic_ready = 0;
+
+    uint32_t pulse     = ic_fall  - ic_rise1;
+    uint32_t period    = ic_rise2 - ic_rise1;
+    uint32_t pulse_us  = pulse  / 80;
+    uint32_t period_us = period / 80;
+    uint32_t duty_int  = (pulse * 100) / period;
+    uint32_t duty_frac = (pulse * 1000 / period) % 10;
+
+    static uint32_t last_print = 0;
+    uint32_t now = HAL_GetTick();
+
+    if (now - last_print >= 500)
     {
-      ic_ready = 0;
-
-      uint32_t pulse  = (ic_fall  >= ic_rise1) ?
-                        (ic_fall  -  ic_rise1) :
-                        (1000     -  ic_rise1 + ic_fall);
-
-      uint32_t period = (ic_rise2 >= ic_rise1) ?
-                        (ic_rise2 -  ic_rise1) :
-                        (1000     -  ic_rise1 + ic_rise2);
-
-      float measured_duty = 0.0f;
-      if (period > 0)
-          measured_duty = (float)pulse / (float)period * 100.0f;
-
+      last_print = now;
       printf("---------------------------\r\n");
-      printf("Set Duty   : %s\r\n",      duty_labels[duty_index]);
-      printf("Pulse Width: %lu us\r\n",  pulse);
-      printf("Period     : %lu us\r\n",  period);
-      printf("Meas Duty  : %.1f%%\r\n",  measured_duty);
+      printf("Set Duty   : %s\r\n",        duty_labels[duty_index]);
+      printf("Pulse Width: %lu us\r\n",    pulse_us);
+      printf("Period     : %lu us\r\n",    period_us);
+      printf("Meas Duty  : %lu.%lu%%\r\n", duty_int, duty_frac);
     }
+  }
   }
   /* USER CODE END 3 */
 }
@@ -233,25 +237,35 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
   if (GPIO_Pin == GPIO_PIN_0)
   {
-    printf("IC triggered\r\n");
-    uint32_t cnt = __HAL_TIM_GET_COUNTER(&htim2);
-    uint8_t  pin = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_0);
+    uint32_t cnt = DWT->CYCCNT;
+    static uint8_t last_pin = 0;
+    uint8_t pin = HAL_GPIO_ReadPin(IC_INPUT_GPIO_Port, IC_INPUT_Pin);
 
-    if (ic_state == 0 && pin == GPIO_PIN_SET)
+    if (pin == last_pin)
+    {
+      return;
+    }
+    last_pin = pin;
+
+    if (ic_state == 0 && pin == 1)
     {
       ic_rise1 = cnt;
       ic_state = 1;
-    }
-    else if (ic_state == 1 && pin == GPIO_PIN_RESET)
+  }
+    else if (ic_state == 1 && pin == 0)
     {
       ic_fall  = cnt;
       ic_state = 2;
-    }
-    else if (ic_state == 2 && pin == GPIO_PIN_SET)
+  }
+    else if (ic_state == 2 && pin == 1)
     {
       ic_rise2 = cnt;
       ic_state = 0;
       ic_ready = 1;
+    }
+    else
+    {
+      ic_state = 0;
     }
   }
 }
